@@ -14,6 +14,8 @@
 # user input axis of graph
 # user input for x y axis start and end, next version ...selector in test.py
 # overlay normal distribution or side by side ... next version
+#option to show pdf color bar
+#need to determine scale from pt data
 
 import polars as pl
 from csv import reader
@@ -123,45 +125,91 @@ def delay_list(data, delay=25):
 
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
-    df = pl.read_csv('pbio.2005143.s010',sep='\t', has_header=True, parse_dates=True)
-    filter_df = df.filter(pl.col('subjectId') == '1636-69-035')
-    sub1 = filter_df.select(['DisplayTime','GlucoseValue'])
-    date0 = filter_df.select('DisplayTime').row(0)[0]
-    #mins = sub1.select(
-    #    pl.col('DisplayTime').apply(lambda x: round_to_multiple( (x - date0).total_seconds()/60 , 5)).alias('minute')
-    #)
-    sub2 = sub1.with_columns(
-        (pl.col('DisplayTime') - date0).alias('dduration')
-    )
-    sub3 = sub2.with_columns(
-        pl.col('dduration').dt.minutes().alias('dminutes')
-    )
-    sub4 = sub3.with_columns(
-        pl.col('dminutes').apply(lambda x: round_to_multiple(x, 5)).alias('deltamins')
-    )
-    sub5=sub4.select([pl.col('deltamins'),pl.col('GlucoseValue')])
-    sub6 = [(row[0], row[1]) for row in sub5.iter_rows()]
+    delays = input('Enter delay values you would like to plot (values must be a multiple of 5 and comma seperated, e.g. 5,15,25):')
+    delays_list = delays.split(',')
+    a = len(delays_list)
+    control = False
+    control = input('Should a reference plot of non-diabetic control data be shown? (y/n): ')
+    if control == ('y' or 'Y' or 'yes' or 'Yes' or 'YES'):
+        control = True
+        b = 2
+    else:
+        b = 1
+    numplots = a * b
+    numplotslist = list(range(a * b))
+    x = numplotslist.copy()
+    y = numplotslist.copy()
+    z = numplotslist.copy()
+    xy = numplotslist.copy()
+    idx = numplotslist.copy()
+    # a = number of delay points, b= 1 for data alone, 2 w control
+    fig, ax = plt.subplots(a,b,sharex=True, sharey=True)
+    fig.suptitle('Color Density Poincaré Plot')
+
+    if control:
+        #every other plot is control
+        controlplots = numplotslist[0::2]
+        patientplots = numplotslist[1::2]
+
+        # control data public cgm data from hall et al.  url?
+        df = pl.read_csv('pbio.2005143.s010', sep='\t', has_header=True, parse_dates=True)
+        filter_df = df.filter(pl.col('subjectId') == '1636-69-035')
+        sub1 = filter_df.select(['DisplayTime', 'GlucoseValue'])
+        date0 = filter_df.select('DisplayTime').row(0)[0]
+        sub2 = sub1.with_columns(
+            (pl.col('DisplayTime') - date0).alias('dduration')
+        )
+        sub3 = sub2.with_columns(
+            pl.col('dduration').dt.minutes().alias('dminutes')
+        )
+        sub4 = sub3.with_columns(
+            pl.col('dminutes').apply(lambda x: round_to_multiple(x, 5)).alias('deltamins')
+        )
+        sub5 = sub4.select([pl.col('deltamins'), pl.col('GlucoseValue')])
+        sub6 = [(row[0], row[1]) for row in sub5.iter_rows()]
+        print(controlplots)
+        print(x)
+        i=0
+
+        for plot in controlplots:
+            print(plot)
+            poincarelist = delay_list(sub6, int(delays_list[i]))
+            x[plot] = np.asarray([x[0] for x in poincarelist])
+            print(x[plot])
+            y[plot] = np.asarray([x[1] for x in poincarelist])
+            xy[plot] = np.vstack([x[plot], y[plot]])
+            z[plot] = gaussian_kde(xy[plot])(xy[plot])
+            # Sort the points by density, so that the densest points are plotted last
+            idx[plot] = z[plot].argsort()
+            x[plot], y[plot], z[plot] = x[plot][idx[plot]], y[plot][idx[plot]], z[plot][idx[plot]]
+            # color options https://matplotlib.org/2.0.2/examples/color/colormaps_reference.html
+            if i == 0:
+                ax[i,0].set_title("healthy control")
+            #ax[i,0].text(5, 210, "healthy control")
+            ax[i,0].set_xlabel("n")
+            ax[i,0].set_ylabel("n + " + str(delays_list[i]) + " mins")
+            ax[i,0].grid(color='green', linestyle='--', linewidth=0.25)
+            ax[i,0].scatter(x[plot], y[plot], c=z[plot], s=50, cmap=cm.jet, alpha=.3, marker='.')
+            ax[i,0].axline((0, 0), slope=1, color='black', linestyle=':', linewidth=.5, alpha=.7)
+            i += 1
+            '''
+
+            ax[plot].set_xlim(0, 400)
+            ax[plot].set_ylim(0, 400)
+            '''
+
+    else:
+        patientplots = numplotslist
+
+    ax_ = ax[0, 0].scatter(x[plot], y[plot], c=z[plot], s=50, cmap=cm.jet, alpha=.3, marker='.')
+    plt.colorbar(ax_)
+    plt.show()
+
+'''
+
     sub7 = delay_list(sub6)
 
-    x = np.asarray([x[0] for x in sub7])
-    y = np.asarray([x[1] for x in sub7])
-    xy = np.vstack([x, y])
-    z = gaussian_kde(xy)(xy)
-    # Sort the points by density, so that the densest points are plotted last
-    idx = z.argsort()
-    x, y, z = x[idx], y[idx], z[idx]
-    # color options https://matplotlib.org/2.0.2/examples/color/colormaps_reference.html
-    fig, ax = plt.subplots(1,2,sharex=True, sharey=True)
-    fig.suptitle('Color Density Poincaré Plot')
-    bx_ = ax[0].axline((0, 0), slope=1, color='black',linestyle=':', linewidth=.5,alpha=.7)
-    ax[0].set_title("delay = 25")
-    ax[0].text(25,375, "non-diabetic reference")
-    ax_ = ax[0].scatter(x, y, c=z, s=50, cmap=cm.jet, alpha=.3, marker = '.')
-    ax[0].set_xlabel("n")
-    ax[0].set_ylabel("n + delay")
-    ax[0].set_xlim(0, 400)
-    ax[0].set_ylim(0, 400)
-    ax[0].grid(color='green', linestyle='--', linewidth=0.25)
+
 
     csvimport = file_sel()
     cgmdata = parse_csv(csvimport)
@@ -177,7 +225,6 @@ if __name__ == '__main__':
     x1, y1, z1 = x1[idx1], y1[idx1], z1[idx1]
 
     # color options https://matplotlib.org/2.0.2/examples/color/colormaps_reference.html
-    #fig, (ax) = plt.subplots()
     bx1_ = ax[1].axline((0, 0), slope=1, color='black',linestyle=':', linewidth=.5,alpha=.7)
     ax[1].set_title("delay = 25")
     #maybe include name of file
@@ -189,5 +236,7 @@ if __name__ == '__main__':
     ax[1].set_ylabel("n + delay")
     ax[1].set_xlim(0, 400)
     ax[1].set_ylim(0, 400)
-    ax[1].grid(color='green', linestyle='--', linewidth=0.25)
-    plt.show()
+    ax[1].grid(color='green', linestyle='--', linewidth=0.25)'''
+
+
+
