@@ -16,6 +16,7 @@
 # overlay normal distribution or side by side ... next version
 #option to show pdf color bar
 #need to determine scale from pt data
+
 import polars as pl
 from csv import reader
 from datetime import datetime
@@ -25,7 +26,7 @@ import matplotlib.pyplot as plt
 from matplotlib import cm
 import numpy as np
 from scipy.stats import gaussian_kde
-from ntpath import basename
+
 
 def round_to_multiple(number, multiple):
     return multiple * round(number / multiple)
@@ -102,7 +103,7 @@ def parse_csv(file):
             return libre_data
 
 #data is list of tuples (delta from time0,GlucoseValue)
-def delay_map(data, delay=25):
+def delay_list(data, delay=25):
     # prune list of any values that don't have value at delay time
     i = 0
     delay = round_to_multiple(delay, 5)
@@ -134,9 +135,7 @@ if __name__ == '__main__':
         b = 2
     else:
         b = 1
-    #total number of plots    
     numplots = a * b
-    
     numplotslist = list(range(a * b))
     x = numplotslist.copy()
     y = numplotslist.copy()
@@ -152,10 +151,8 @@ if __name__ == '__main__':
         controlplots = numplotslist[0::2]
         patientplots = numplotslist[1::2]
 
-
-        # control data public cgm data from hall et al.  https://journals.plos.org/plosbiology/article?id=10.1371/journal.pbio.2005143
+        # control data public cgm data from hall et al.  url?
         df = pl.read_csv('pbio.2005143.s010', sep='\t', has_header=True, parse_dates=True)
-        #control data
         filter_df = df.filter(pl.col('subjectId') == '1636-69-035')
         sub1 = filter_df.select(['DisplayTime', 'GlucoseValue'])
         date0 = filter_df.select('DisplayTime').row(0)[0]
@@ -170,116 +167,48 @@ if __name__ == '__main__':
         )
         sub5 = sub4.select([pl.col('deltamins'), pl.col('GlucoseValue')])
         sub6 = [(row[0], row[1]) for row in sub5.iter_rows()]
+        print(controlplots)
+        print(x)
+        i=0
 
-        
-        #control data plots
-        for index, plot in enumerate(controlplots):
-            if len(controlplots) == 1:
-                subp = ax[0]
-            else:
-                subp = ax[index, 0]
-
-            poincarelist = delay_map(sub6, int(delays_list[index]))
-            x[plot] = np.asarray([h[0] for h in poincarelist])
-            y[plot] = np.asarray([h[1] for h in poincarelist])
+        for plot in controlplots:
+            print(plot)
+            poincarelist = delay_list(sub6, int(delays_list[i]))
+            x[plot] = np.asarray([x[0] for x in poincarelist])
+            print(x[plot])
+            y[plot] = np.asarray([x[1] for x in poincarelist])
             xy[plot] = np.vstack([x[plot], y[plot]])
             z[plot] = gaussian_kde(xy[plot])(xy[plot])
             # Sort the points by density, so that the densest points are plotted last
             idx[plot] = z[plot].argsort()
             x[plot], y[plot], z[plot] = x[plot][idx[plot]], y[plot][idx[plot]], z[plot][idx[plot]]
             # color options https://matplotlib.org/2.0.2/examples/color/colormaps_reference.html
-            if index == 0:
-                subp.set_title("healthy control")
-            subp.set_xlabel("n")
-            subp.set_ylabel("n + " + str(delays_list[index]) + " mins")
-            subp.grid(color='green', linestyle='--', linewidth=0.25)
-            subp.scatter(x[plot], y[plot], c=z[plot], s=50, cmap=cm.jet, alpha=.3, marker='.')
-            subp.axline((0, 0), slope=1, color='black', linestyle=':', linewidth=.5, alpha=.7)
-
+            if i == 0:
+                ax[i,0].set_title("healthy control")
+            #ax[i,0].text(5, 210, "healthy control")
+            ax[i,0].set_xlabel("n")
+            ax[i,0].set_ylabel("n + " + str(delays_list[i]) + " mins")
+            ax[i,0].grid(color='green', linestyle='--', linewidth=0.25)
+            ax[i,0].scatter(x[plot], y[plot], c=z[plot], s=50, cmap=cm.jet, alpha=.3, marker='.')
+            ax[i,0].axline((0, 0), slope=1, color='black', linestyle=':', linewidth=.5, alpha=.7)
+            i += 1
             '''
+
             ax[plot].set_xlim(0, 400)
-            ax[plot].set_ylim(0, 400)      
-
-            '''            
-        #load pt data
-        csvimport = file_sel()
-        df = pl.read_csv(csvimport,has_header=True,skip_rows=1)
-        #df = df.select(['Device Timestamp', 'Historic Glucose mg/dL', 'Scan Glucose mg/dL'])
-        df = df.with_columns(
-            (pl.col('Scan Glucose mg/dL').cast(pl.Int64).fill_null(0) + pl.col('Historic Glucose mg/dL')).alias('glu'))
-        df = df.lazy().drop_nulls('glu').collect()
-        df = df.with_columns((pl.col('Device Timestamp').str.strptime(pl.Datetime,fmt='%m-%d-%Y %I:%M %p')).alias('timestamp'))
-        df = df.sort('timestamp')
-        date0 = df.select('timestamp').row(0)[0]
-        df = df.with_columns(
-            (pl.col('timestamp') - date0).dt.minutes().alias('duration')
-        )
-        df = df.with_columns(
-            pl.col('duration').apply(lambda x: round_to_multiple(x, 5)).alias('deltamins')
-        )
-        df = df.select(['deltamins', 'glu'])
-        df = [(row[0], row[1]) for row in df.iter_rows()]
-
-        #patient data plots
-        for index, plot in enumerate(patientplots):
-            if len(patientplots) == 1:
-                subpt = ax[1]
-            else:
-                subpt = ax[index, 1]
-
-            poincarelist = delay_map(df, int(delays_list[index]))
-            x[plot] = np.asarray([j[0] for j in poincarelist])
-            y[plot] = np.asarray([j[1] for j in poincarelist])
-            xy[plot] = np.vstack([x[plot], y[plot]])
-            z[plot] = gaussian_kde(xy[plot])(xy[plot])
-            # Sort the points by density, so that the densest points are plotted last
-            idx[plot] = z[plot].argsort()
-            x[plot], y[plot], z[plot] = x[plot][idx[plot]], y[plot][idx[plot]], z[plot][idx[plot]]
-            # color options https://matplotlib.org/2.0.2/examples/color/colormaps_reference.html
-            if index == 0:
-                subpt.set_title("file: " + basename(csvimport),size=8)
-            subpt.set_xlabel("n")
-            subpt.set_ylabel("n + " + str(delays_list[index]) + " mins")
-            subpt.grid(color='green', linestyle='--', linewidth=0.25)
-            subpt.scatter(x[plot], y[plot], c=z[plot], s=50, cmap=cm.jet, alpha=.3, marker='.')
-            subpt.axline((0, 0), slope=1, color='black', linestyle=':', linewidth=.5, alpha=.7)
-
+            ax[plot].set_ylim(0, 400)
+            '''
 
     else:
         patientplots = numplotslist
 
-    #ax_ = ax[0, 0].scatter(x[plot], y[plot], c=z[plot], s=50, cmap=cm.jet, alpha=.3, marker='.')
-    #plt.colorbar(ax_)
-
+    ax_ = ax[0, 0].scatter(x[plot], y[plot], c=z[plot], s=50, cmap=cm.jet, alpha=.3, marker='.')
+    plt.colorbar(ax_)
     plt.show()
 
 '''
 
-        cgmdata = parse_csv(csvimport)
-        print(cgmdata)
-        for index, plot in enumerate(patientplots):
-            if len(patientplots) == 1:
-                subpt = ax[1]
-            else:
-                subpt = ax[index, 1]
-        
-            poincarelist = delay_map(cgmdata, int(delays_list[index]))
-            x[plot] = np.asarray([h[0] for h in poincarelist])
-            y[plot] = np.asarray([h[1] for h in poincarelist])
-            xy[plot] = np.vstack([x[plot], y[plot]])
-            z[plot] = gaussian_kde(xy[plot])(xy[plot])
-            # Sort the points by density, so that the densest points are plotted last
-            idx[plot] = z[plot].argsort()
-            x[plot], y[plot], z[plot] = x[plot][idx[plot]], y[plot][idx[plot]], z[plot][idx[plot]]
-            # color options https://matplotlib.org/2.0.2/examples/color/colormaps_reference.html
-            if index == 0:
-                subpt.set_title("file: " + str(basename(csvimport)),size=8)
-            subpt.set_xlabel("n")
-            subpt.set_ylabel("n + " + str(delays_list[index]) + " mins")
-            subpt.grid(color='green', linestyle='--', linewidth=0.25)
-            subpt.scatter(x[plot], y[plot], c=z[plot], s=50, cmap=cm.jet, alpha=.3, marker='.')
-            subpt.axline((0, 0), slope=1, color='black', linestyle=':', linewidth=.5, alpha=.7)
-            
+    sub7 = delay_map(sub6)
+
 
 
     csvimport = file_sel()
@@ -287,8 +216,10 @@ if __name__ == '__main__':
 
     x1 = np.asarray([x[0] for x in delay_map(cgmdata)])
     y1 = np.asarray([x[1] for x in delay_map(cgmdata)])
+
     xy1 = np.vstack([x1, y1])
     z1 = gaussian_kde(xy1)(xy1)
+
     # Sort the points by density, so that the densest points are plotted last
     idx1 = z1.argsort()
     x1, y1, z1 = x1[idx1], y1[idx1], z1[idx1]
@@ -306,3 +237,6 @@ if __name__ == '__main__':
     ax[1].set_xlim(0, 400)
     ax[1].set_ylim(0, 400)
     ax[1].grid(color='green', linestyle='--', linewidth=0.25)'''
+
+
+
