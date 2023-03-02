@@ -124,13 +124,13 @@ if __name__ == '__main__':
     delays = input('Enter delay values you would like to plot (values must be a multiple of 5 and comma seperated, e.g. 5,15,25):')
     delays_list = delays.split(',')
     a = len(delays_list)
-    control = False
     control = input('Should a reference plot of non-diabetic control data be shown? (y/n): ')
     if control == ('y' or 'Y' or 'yes' or 'Yes' or 'YES'):
         control = True
         b = 2
     else:
         b = 1
+        control = False
     #total number of plots    
     numplots = a * b
     
@@ -143,7 +143,6 @@ if __name__ == '__main__':
     # a = number of delay points, b= 1 for data alone, 2 w control
     fig, ax = plt.subplots(a,b,sharex=True, sharey=True)
     fig.suptitle('Color Density Poincaré Plot')
-
     if control:
         #every other plot is control
         controlplots = numplotslist[0::2]
@@ -291,9 +290,87 @@ if __name__ == '__main__':
             subpt.axline((0, 0), slope=1, color='black', linestyle=':', linewidth=.5, alpha=.7)
 
     else:
-        #patient data plots
+    #patient data plots
+        #fig, ax = plt.subplots(numplots,sharex=True, sharey=True)
+        patientplots = numplotslist
+        # load pt data
+        csvimport = file_sel()
+        di = pl.read_csv(csvimport, has_header=False)
+        cgmtype = di.select('column_1').row(0)[0]
+        if cgmtype == 'Index':
+            # this is a clarity file so....
+            df = pl.read_csv(csvimport, has_header=True, try_parse_dates=True, skip_rows_after_header=10)
+            df = df.with_columns(
+                (pl.col('Glucose Value (mg/dL)')).alias('glu'))
+            df = df.lazy().drop_nulls('glu').collect()
+            df = df.sort('Timestamp (YYYY-MM-DDThh:mm:ss)')
+            date0 = df.select('Timestamp (YYYY-MM-DDThh:mm:ss)').row(0)[0]
+            df = df.with_columns(
+                (pl.col('Timestamp (YYYY-MM-DDThh:mm:ss)') - date0).dt.minutes().alias('duration')
+            )
+        else:
+            # this is a libre file so....
+            df = pl.read_csv(csvimport, has_header=True, try_parse_dates=True, skip_rows=1)
+            df = df.with_columns(
+                (pl.col('Scan Glucose mg/dL').cast(pl.Int64).fill_null(0) + pl.col('Historic Glucose mg/dL')).alias('glu'))
+            df = df.lazy().drop_nulls('glu').collect()
+            # usa version
+            df = df.with_columns(
+                (pl.col('Device Timestamp').str.strptime(pl.Datetime, fmt='%m-%d-%Y %I:%M %p')).alias('timestamp'))
+            # euro version
+            # df = df.with_columns((pl.col('Device Timestamp').str.strptime(pl.Datetime,fmt='%d-%m-%Y %H:%M')).alias('timestamp'))
+            df = df.sort('timestamp')
+            date0 = df.select('timestamp').row(0)[0]
+            df = df.with_columns(
+                (pl.col('timestamp') - date0).dt.minutes().alias('duration')
+            )
+        df = df.with_columns(
+            pl.col('duration').apply(lambda x: round_to_multiple(x, 5)).alias('deltamins')
+        )
+        df = df.select(['deltamins', 'glu'])
+        # remove duplicates
+        df = df.unique(subset='deltamins', keep='first')
 
+        # patient data plots
+        for index, plot in enumerate(patientplots):
+            if len(patientplots) == 1:
+                subpt = ax
+            else:
+                subpt = ax[index]
+            delay = int(delays_list[index])
+
+            # djoiny gives y coordinate in glu col, returned table is - deltamins, glu
+            dd = df.select('deltamins') + delay
+            djoiny = df.join(dd, on='deltamins', how='inner')
+            djoiny = djoiny.with_columns(
+                pl.col('glu').alias('glu2')
+            )
+            # now in order to get the x coordinate, we need to subtract 15 from the y coordinate
+            de = djoiny.select('deltamins') - delay
+            djoinx = df.join(de, on='deltamins', how='inner')
+            djoinx = djoinx.select(['glu'])
+            djoiny = djoiny.select(['glu2'])
+            djoinxy = pl.concat(
+                [
+                    djoinx,
+                    djoiny,
+                ],
+                how='horizontal'
+            )
+            # color options https://matplotlib.org/2.0.2/examples/color/colormaps_reference.html
+            x[plot] = djoinxy.get_column('glu').to_numpy()
+            y[plot] = djoinxy.get_column('glu2').to_numpy()
+            xy[plot] = np.vstack([x[plot], y[plot]])
+            z[plot] = gaussian_kde(xy[plot])(xy[plot])
+            # Sort the points by density, so that the densest points are plotted last
+            idx[plot] = z[plot].argsort()
+            x[plot], y[plot], z[plot] = x[plot][idx[plot]], y[plot][idx[plot]], z[plot][idx[plot]]
+            if index == 0:
+                subpt.set_title("file: " + basename(csvimport), size=8)
+            subpt.set_xlabel("n")
+            subpt.set_ylabel("n + " + str(delays_list[index]) + " mins")
+            subpt.grid(color='green', linestyle='--', linewidth=0.25)
+            subpt.scatter(x[plot], y[plot], c=z[plot], s=50, cmap=cm.jet, alpha=.3, marker='.')
+            subpt.axline((0, 0), slope=1, color='black', linestyle=':', linewidth=.5, alpha=.7)
     plt.show()
 
-
-#add in else statement in case control data not selected
