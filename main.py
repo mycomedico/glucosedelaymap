@@ -15,7 +15,6 @@
 # user input for x y axis start and end, next version ...selector in test.py
 # overlay normal distribution or side by side ... next version
 #option to show pdf color bar
-#need to determine scale from pt data
 import polars as pl
 from csv import reader
 from datetime import datetime
@@ -103,7 +102,7 @@ def parse_csv(file):
 
 #data is list of tuples (delta from time0,GlucoseValue)
 #needs to be replaced by polar joins
-def delay_map(data, delay=25):
+'''def delay_map(data, delay=25):
     # prune list of any values that don't have value at delay time
     delay = round_to_multiple(delay, 5)
     offset = int(delay / 5) + 5
@@ -118,7 +117,7 @@ def delay_map(data, delay=25):
             delayidex = obs_times.index(pdelay, i + 1, i + offset)
             poincarelist.append((g, glulist[delayidex]))
     return poincarelist
-
+'''
 
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
@@ -213,19 +212,34 @@ if __name__ == '__main__':
 #need to update for dexcom
         #load pt data
         csvimport = file_sel()
-        df = pl.read_csv(csvimport,has_header=True,skip_rows=1)
-        df = df.with_columns(
-            (pl.col('Scan Glucose mg/dL').cast(pl.Int64).fill_null(0) + pl.col('Historic Glucose mg/dL')).alias('glu'))
-        df = df.lazy().drop_nulls('glu').collect()
-        #usa version
-        df = df.with_columns((pl.col('Device Timestamp').str.strptime(pl.Datetime,fmt='%m-%d-%Y %I:%M %p')).alias('timestamp'))
-        #euro version
-        #df = df.with_columns((pl.col('Device Timestamp').str.strptime(pl.Datetime,fmt='%d-%m-%Y %H:%M')).alias('timestamp'))
-        df = df.sort('timestamp')
-        date0 = df.select('timestamp').row(0)[0]
-        df = df.with_columns(
-            (pl.col('timestamp') - date0).dt.minutes().alias('duration')
-        )
+        di = pl.read_csv(csvimport,has_header=False)
+        cgmtype = di.select('column_1').row(0)[0]
+        if cgmtype == 'Index':
+            #this is a clarity file so....
+            df = pl.read_csv(csvimport,has_header=True,try_parse_dates=True,skip_rows_after_header=10)
+            df = df.with_columns(
+                (pl.col('Glucose Value (mg/dL)')).alias('glu'))
+            df = df.lazy().drop_nulls('glu').collect()
+            df = df.sort('Timestamp (YYYY-MM-DDThh:mm:ss)')
+            date0 = df.select('Timestamp (YYYY-MM-DDThh:mm:ss)').row(0)[0]
+            df = df.with_columns(
+                (pl.col('Timestamp (YYYY-MM-DDThh:mm:ss)') - date0).dt.minutes().alias('duration')
+            )
+        else:
+            #this is a libre file so....
+            df = pl.read_csv(csvimport,has_header=True,try_parse_dates=True,skip_rows=1)
+            df = df.with_columns(
+                (pl.col('Scan Glucose mg/dL').cast(pl.Int64).fill_null(0) + pl.col('Historic Glucose mg/dL')).alias('glu'))
+            df = df.lazy().drop_nulls('glu').collect()
+            #usa version
+            df = df.with_columns((pl.col('Device Timestamp').str.strptime(pl.Datetime,fmt='%m-%d-%Y %I:%M %p')).alias('timestamp'))
+            #euro version
+            #df = df.with_columns((pl.col('Device Timestamp').str.strptime(pl.Datetime,fmt='%d-%m-%Y %H:%M')).alias('timestamp'))
+            df = df.sort('timestamp')
+            date0 = df.select('timestamp').row(0)[0]
+            df = df.with_columns(
+                (pl.col('timestamp') - date0).dt.minutes().alias('duration')
+            )
         df = df.with_columns(
             pl.col('duration').apply(lambda x: round_to_multiple(x, 5)).alias('deltamins')
         )
@@ -275,6 +289,9 @@ if __name__ == '__main__':
             subpt.grid(color='green', linestyle='--', linewidth=0.25)
             subpt.scatter(x[plot], y[plot], c=z[plot], s=50, cmap=cm.jet, alpha=.3, marker='.')
             subpt.axline((0, 0), slope=1, color='black', linestyle=':', linewidth=.5, alpha=.7)
+
+    else:
+        #patient data plots
 
     plt.show()
 
