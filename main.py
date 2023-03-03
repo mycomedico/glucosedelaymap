@@ -41,6 +41,7 @@ def file_sel():
 
 # returns a list of tuples (timedelta since first reading,reading)
 '''
+deprecated in favor of polars
 def parse_csv(file):
 
     with open(file, 'rt') as f:
@@ -134,7 +135,7 @@ if __name__ == '__main__':
         control = False
     #total number of plots    
     numplots = a * b
-    
+    pattern = 'Index.*'
     numplotslist = list(range(a * b))
     x = numplotslist.copy()
     y = numplotslist.copy()
@@ -214,7 +215,7 @@ if __name__ == '__main__':
         csvimport = file_sel()
         di = pl.read_csv(csvimport,has_header=False)
         cgmtype = di.select('column_1').row(0)[0]
-        pattern = 'Index.*'
+        #pattern = 'Index.*'
 
 
         if re.match(pattern, cgmtype):
@@ -242,14 +243,23 @@ if __name__ == '__main__':
 
         else:
             #this is a libre file so....
+            # we need a regex to detect whether or not 'PM or AM' is in the date column
             df = pl.read_csv(csvimport,has_header=True,try_parse_dates=True,skip_rows=1)
+            datetest= df.select('Device Timestamp').row(0)[0]
+            patternl = '.*[AP]M.*'
+
+            if re.match(patternl, datetest):
+                df = df.with_columns(
+                    (pl.col('Device Timestamp').str.strptime(pl.Datetime, fmt='%m-%d-%Y %I:%M %p')).alias('timestamp'))
+                #print('usa version')
+            else:
+                #print('euro version')
+                df = df.with_columns(
+                    (pl.col('Device Timestamp').str.strptime(pl.Datetime, fmt='%d-%m-%Y %H:%M')).alias('timestamp'))
+
             df = df.with_columns(
                 (pl.col('Scan Glucose mg/dL').cast(pl.Int64).fill_null(0) + pl.col('Historic Glucose mg/dL')).alias('glu'))
-            df = df.lazy().drop_nulls('Transmitter ID').collect()
-            #usa version
-            df = df.with_columns((pl.col('Device Timestamp').str.strptime(pl.Datetime,fmt='%m-%d-%Y %I:%M %p')).alias('timestamp'))
-            #euro version
-            #df = df.with_columns((pl.col('Device Timestamp').str.strptime(pl.Datetime,fmt='%d-%m-%Y %H:%M')).alias('timestamp'))
+            df = df.lazy().drop_nulls('glu').collect()
             df = df.sort('timestamp')
             date0 = df.select('timestamp').row(0)[0]
             df = df.with_columns(
@@ -289,6 +299,9 @@ if __name__ == '__main__':
                 ],
                 how='horizontal'
             )
+            if(len(djoinxy) <5):
+                print("not enough data to plot")
+                exit()
             # color options https://matplotlib.org/2.0.2/examples/color/colormaps_reference.html
             x[plot] = djoinxy.get_column('glu').to_numpy()
             y[plot] = djoinxy.get_column('glu2').to_numpy()
@@ -313,33 +326,57 @@ if __name__ == '__main__':
         csvimport = file_sel()
         di = pl.read_csv(csvimport, has_header=False)
         cgmtype = di.select('column_1').row(0)[0]
-        if cgmtype == 'Index':
+
+        if re.match(pattern, cgmtype):
             # this is a clarity file so....
-            df = pl.read_csv(csvimport, has_header=True, try_parse_dates=True, skip_rows_after_header=10)
+            if cgmtype == 'Index':
+                df = pl.read_csv(csvimport, has_header=True, try_parse_dates=True,
+                                 null_values=['Low', 'High', 'NotComputable', 'SensorNotActive', 'SensorWarmup',
+                                              'OutOfRange', 'NoSensor', 'InvalidReading', 'SensorFailed',
+                                              'SensorInitializing', 'SensorCalibration'])
+
+            else:
+                df = pl.read_csv(csvimport, has_header=True, try_parse_dates=True, sep='\t',
+                                 null_values=['Low', 'High', 'NotComputable', 'SensorNotActive', 'SensorWarmup',
+                                              'OutOfRange', 'NoSensor', 'InvalidReading', 'SensorFailed',
+                                              'SensorInitializing', 'SensorCalibration'])
+
+
+            df = df.lazy().drop_nulls('Transmitter ID').collect()
             df = df.with_columns(
-                (pl.col('Glucose Value (mg/dL)')).alias('glu'))
+                (pl.col('Glucose Value (mg/dL)').cast(pl.Int64)).alias('glu'))
             df = df.lazy().drop_nulls('glu').collect()
             df = df.sort('Timestamp (YYYY-MM-DDThh:mm:ss)')
             date0 = df.select('Timestamp (YYYY-MM-DDThh:mm:ss)').row(0)[0]
             df = df.with_columns(
                 (pl.col('Timestamp (YYYY-MM-DDThh:mm:ss)') - date0).dt.minutes().alias('duration')
             )
+
         else:
             # this is a libre file so....
             df = pl.read_csv(csvimport, has_header=True, try_parse_dates=True, skip_rows=1)
+            datetest = df.select('Device Timestamp').row(0)[0]
+            patternl = '.*[AP]M.*'
+
+            if re.match(patternl, datetest):
+                df = df.with_columns(
+                    (pl.col('Device Timestamp').str.strptime(pl.Datetime, fmt='%m-%d-%Y %I:%M %p')).alias('timestamp'))
+                # print('usa version')
+            else:
+                # print('euro version')
+                df = df.with_columns(
+                    (pl.col('Device Timestamp').str.strptime(pl.Datetime, fmt='%d-%m-%Y %H:%M')).alias('timestamp'))
+
+            #df = pl.read_csv(csvimport, has_header=True, try_parse_dates=True, skip_rows=1)
             df = df.with_columns(
                 (pl.col('Scan Glucose mg/dL').cast(pl.Int64).fill_null(0) + pl.col('Historic Glucose mg/dL')).alias('glu'))
             df = df.lazy().drop_nulls('glu').collect()
-            # usa version
-            df = df.with_columns(
-                (pl.col('Device Timestamp').str.strptime(pl.Datetime, fmt='%m-%d-%Y %I:%M %p')).alias('timestamp'))
-            # euro version
-            # df = df.with_columns((pl.col('Device Timestamp').str.strptime(pl.Datetime,fmt='%d-%m-%Y %H:%M')).alias('timestamp'))
             df = df.sort('timestamp')
             date0 = df.select('timestamp').row(0)[0]
             df = df.with_columns(
                 (pl.col('timestamp') - date0).dt.minutes().alias('duration')
             )
+
         df = df.with_columns(
             pl.col('duration').apply(lambda x: round_to_multiple(x, 5)).alias('deltamins')
         )
@@ -373,6 +410,9 @@ if __name__ == '__main__':
                 ],
                 how='horizontal'
             )
+            if(len(djoinxy) <5):
+                print("not enough data to plot")
+                exit()
             # color options https://matplotlib.org/2.0.2/examples/color/colormaps_reference.html
             x[plot] = djoinxy.get_column('glu').to_numpy()
             y[plot] = djoinxy.get_column('glu2').to_numpy()
