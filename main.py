@@ -16,6 +16,7 @@
 # overlay normal distribution or side by side ... next version
 #option to show pdf color bar
 import polars as pl
+import re
 from csv import reader
 from datetime import datetime
 import tkinter as tk
@@ -39,7 +40,7 @@ def file_sel():
 # https://datagy.io/python-round-to-multiple/
 
 # returns a list of tuples (timedelta since first reading,reading)
-
+'''
 def parse_csv(file):
 
     with open(file, 'rt') as f:
@@ -102,7 +103,7 @@ def parse_csv(file):
 
 #data is list of tuples (delta from time0,GlucoseValue)
 #needs to be replaced by polar joins
-'''def delay_map(data, delay=25):
+def delay_map(data, delay=25):
     # prune list of any values that don't have value at delay time
     delay = round_to_multiple(delay, 5)
     offset = int(delay / 5) + 5
@@ -213,23 +214,38 @@ if __name__ == '__main__':
         csvimport = file_sel()
         di = pl.read_csv(csvimport,has_header=False)
         cgmtype = di.select('column_1').row(0)[0]
-        if cgmtype == 'Index':
-            #this is a clarity file so....
-            df = pl.read_csv(csvimport,has_header=True,try_parse_dates=True,skip_rows_after_header=10)
+        pattern = 'Index.*'
+
+
+        if re.match(pattern, cgmtype):
+
+            if cgmtype == 'Index':
+                #this is a clarity file so....
+                df = pl.read_csv(csvimport,has_header=True,try_parse_dates=True,null_values=['Low','High','NotComputable','SensorNotActive','SensorWarmup','OutOfRange','NoSensor','InvalidReading','SensorFailed','SensorInitializing','SensorCalibration'])
+
+            else:
+                df = pl.read_csv(csvimport, has_header=True, try_parse_dates=True, sep='\t',
+                                 null_values=['Low', 'High', 'NotComputable', 'SensorNotActive', 'SensorWarmup',
+                                              'OutOfRange', 'NoSensor', 'InvalidReading', 'SensorFailed',
+                                              'SensorInitializing', 'SensorCalibration'])
+
+
+            df = df.lazy().drop_nulls('Transmitter ID').collect()
             df = df.with_columns(
-                (pl.col('Glucose Value (mg/dL)')).alias('glu'))
+                (pl.col('Glucose Value (mg/dL)').cast(pl.Int64)).alias('glu'))
             df = df.lazy().drop_nulls('glu').collect()
             df = df.sort('Timestamp (YYYY-MM-DDThh:mm:ss)')
             date0 = df.select('Timestamp (YYYY-MM-DDThh:mm:ss)').row(0)[0]
             df = df.with_columns(
                 (pl.col('Timestamp (YYYY-MM-DDThh:mm:ss)') - date0).dt.minutes().alias('duration')
             )
+
         else:
             #this is a libre file so....
             df = pl.read_csv(csvimport,has_header=True,try_parse_dates=True,skip_rows=1)
             df = df.with_columns(
                 (pl.col('Scan Glucose mg/dL').cast(pl.Int64).fill_null(0) + pl.col('Historic Glucose mg/dL')).alias('glu'))
-            df = df.lazy().drop_nulls('glu').collect()
+            df = df.lazy().drop_nulls('Transmitter ID').collect()
             #usa version
             df = df.with_columns((pl.col('Device Timestamp').str.strptime(pl.Datetime,fmt='%m-%d-%Y %I:%M %p')).alias('timestamp'))
             #euro version
