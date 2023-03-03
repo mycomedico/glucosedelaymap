@@ -136,6 +136,7 @@ if __name__ == '__main__':
     #total number of plots    
     numplots = a * b
     pattern = 'Index.*'
+    patternl = '.*[AP]M.*'
     numplotslist = list(range(a * b))
     x = numplotslist.copy()
     y = numplotslist.copy()
@@ -215,8 +216,6 @@ if __name__ == '__main__':
         csvimport = file_sel()
         di = pl.read_csv(csvimport,has_header=False)
         cgmtype = di.select('column_1').row(0)[0]
-        #pattern = 'Index.*'
-
 
         if re.match(pattern, cgmtype):
 
@@ -246,7 +245,6 @@ if __name__ == '__main__':
             # we need a regex to detect whether or not 'PM or AM' is in the date column
             df = pl.read_csv(csvimport,has_header=True,try_parse_dates=True,skip_rows=1)
             datetest= df.select('Device Timestamp').row(0)[0]
-            patternl = '.*[AP]M.*'
 
             if re.match(patternl, datetest):
                 df = df.with_columns(
@@ -356,7 +354,6 @@ if __name__ == '__main__':
             # this is a libre file so....
             df = pl.read_csv(csvimport, has_header=True, try_parse_dates=True, skip_rows=1)
             datetest = df.select('Device Timestamp').row(0)[0]
-            patternl = '.*[AP]M.*'
 
             if re.match(patternl, datetest):
                 df = df.with_columns(
