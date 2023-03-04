@@ -5,16 +5,12 @@
 # Currently runs as a script that generates poincare plot from dexcom clarity csv file
 # configured for mg/dL
 # a color density gradient avoids overplotting in a scatterplot https://www.data-to-viz.com/graph/density2d.html
-# import csv data from libreview
-# plot of normal cgm data
+
 # surface plot?  https://yuchen52.medium.com/beyond-data-scientist-3d-plots-in-python-with-examples-2a8bd7aa654b
-# next i need kivymd to make a gui
 # https://kivymd.readthedocs.io/en/latest/components/charts/
-# user input for time delay
-# user input axis of graph
 # user input for x y axis start and end, next version ...selector in test.py
 # overlay normal distribution or side by side ... next version
-#option to show pdf color bar
+#Specify date range of analysis period... Start Date and Time, End Date and Time
 import polars as pl
 import re
 from csv import reader
@@ -39,87 +35,7 @@ def file_sel():
     return file_path
 # https://datagy.io/python-round-to-multiple/
 
-# returns a list of tuples (timedelta since first reading,reading)
-'''
-deprecated in favor of polars
-def parse_csv(file):
 
-    with open(file, 'rt') as f:
-        csv_reader = reader(f)
-        for line in csv_reader:
-
-            #dexcom
-            if line[0] == 'Index':
-                headers= line
-                break
-
-            #libre
-            else:
-                headers = next(csv_reader)
-                break
-
-        #dexcom
-        if headers[0] == 'Index':
-            # first 10 lines of dexcom csv are descriptive, so skip
-            for line in csv_reader:
-                if line[0] == '10':
-                    break
-            # get initial values in order to determine time delta col
-            for line in csv_reader:
-                datetimeinitial = datetime.strptime(line[1], '%Y-%m-%dT%H:%M:%S')
-                sensorglucoseinitial = int(line[7])
-                dex_data = [(0, sensorglucoseinitial)]
-                break
-            # time delta = datetime - datetimeinitial
-            for line in csv_reader:
-                readingdelta = datetime.strptime(line[1], '%Y-%m-%dT%H:%M:%S') - datetimeinitial
-                readingdelta_mins = readingdelta.total_seconds() / 60
-                # data needs to be normalized by rounding to nearest multiple of 5
-                readingdelta_normalized = round_to_multiple(readingdelta_mins, 5)
-                dex_data.append((readingdelta_normalized, int(line[7])))
-            return dex_data
-
-        else:
-            for line in csv_reader:
-                if line[2] and line[4]:
-                    # '%m-%d-%Y %I:%M %p' us
-                    # '%d-%m-%Y %H:%M'eu
-                    datetimeinitial = datetime.strptime(line[2], '%m-%d-%Y %I:%M %p')
-                    sensorglucoseinitial = int(line[4])
-                    libre_data = [(0, sensorglucoseinitial)]
-                    break
-                else:
-                    pass
-
-            for line in csv_reader:
-                if line[2] and line[4]:
-                    readingdelta = datetime.strptime(line[2], '%m-%d-%Y %I:%M %p') - datetimeinitial
-                    readingdelta_mins = readingdelta.total_seconds() / 60
-                    # data needs to be normalized by rounding to nearest multiple of 5
-                    readingdelta_normalized = round_to_multiple(readingdelta_mins, 5)
-                    libre_data.append((readingdelta_normalized, int(line[4])))
-                else:
-                    pass
-            return libre_data
-
-#data is list of tuples (delta from time0,GlucoseValue)
-#needs to be replaced by polar joins
-def delay_map(data, delay=25):
-    # prune list of any values that don't have value at delay time
-    delay = round_to_multiple(delay, 5)
-    offset = int(delay / 5) + 5
-    obs_times = [x[0] for x in data]
-    obs_times_set = set(obs_times)
-    glulist = [x[1] for x in data]
-    poincarelist = []
-    for i, (r, g) in enumerate(data):
-        # if r + delay is in obs_times, then append to poincarelist
-        pdelay = r + delay
-        if pdelay in obs_times_set:
-            delayidex = obs_times.index(pdelay, i + 1, i + offset)
-            poincarelist.append((g, glulist[delayidex]))
-    return poincarelist
-'''
 
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
@@ -133,7 +49,20 @@ if __name__ == '__main__':
     else:
         b = 1
         control = False
-    #total number of plots    
+
+    color_legend = input('Display color density function legend for each plot? (y/n): ')
+    if color_legend == ('y' or 'Y' or 'yes' or 'Yes' or 'YES'):
+        color_legend = True
+    else:
+        color_legend = False
+
+    daterange = input('Would you like to select a range of dates to analyze? (n = use all data): ')
+    if daterange == ('y' or 'Y' or 'yes' or 'Yes' or 'YES'):
+        daterange = True
+    else:
+        daterange = False
+
+    #total number of plots
     numplots = a * b
     pattern = 'Index.*'
     patternl = '.*[AP]M.*'
@@ -205,10 +134,10 @@ if __name__ == '__main__':
             subp.set_xlabel("n")
             subp.set_ylabel("n + " + str(delays_list[index]) + " mins")
             subp.grid(color='green', linestyle='--', linewidth=0.25)
-            subp.scatter(x[plot], y[plot], c=z[plot], s=50, cmap=cm.jet, alpha=.3, marker='.')
+            con_plot = subp.scatter(x[plot], y[plot], c=z[plot], s=50, cmap=cm.jet, alpha=.3, marker='.')
             subp.axline((0, 0), slope=1, color='black', linestyle=':', linewidth=.5, alpha=.7)
-            #ax[plot].set_xlim(0, 400)
-            #ax[plot].set_ylim(0, 400)
+            plt.colorbar(con_plot)
+
 
 #this works for libre but need to manually input usa or euro, maybe query user for country??
 #need to update for dexcom
@@ -266,6 +195,18 @@ if __name__ == '__main__':
         df = df.with_columns(
             pl.col('duration').apply(lambda x: round_to_multiple(x, 5)).alias('deltamins')
         )
+        if daterange:
+            dstart = df.head(1).select('timestamp')
+            dend = df.tail(1).select('timestamp')
+            print('Date Range of uploaded file is from ' + str(dstart[0,0]) + ' to ' + str(dend[0,0]))
+            analysis_start = input('Enter analysis start date/time (following format YYYY-MM-DD HH:mm): ')
+            analysis_end = input('Enter analysis end date/time (same format): ')
+            start_datetime = datetime.strptime(analysis_start, '%Y-%m-%d %H:%M')
+            end_datetime = datetime.strptime(analysis_end, '%Y-%m-%d %H:%M')
+            df = df.filter(
+                    pl.col("timestamp").is_between(start_datetime, end_datetime)
+            )
+
         df = df.select(['deltamins', 'glu'])
         #remove duplicates
         df = df.unique(subset='deltamins', keep='first')
@@ -311,14 +252,12 @@ if __name__ == '__main__':
             if index == 0:
                 subpt.set_title("file: " + basename(csvimport),size=8)
             subpt.set_xlabel("n")
-            subpt.set_ylabel("n + " + str(delays_list[index]) + " mins")
             subpt.grid(color='green', linestyle='--', linewidth=0.25)
-            subpt.scatter(x[plot], y[plot], c=z[plot], s=50, cmap=cm.jet, alpha=.3, marker='.')
+            exp_plot = subpt.scatter(x[plot], y[plot], c=z[plot], s=50, cmap=cm.jet, alpha=.3, marker='.')
             subpt.axline((0, 0), slope=1, color='black', linestyle=':', linewidth=.5, alpha=.7)
-
+            plt.colorbar(exp_plot, label='probability density function')
     else:
     #patient data plots
-        #fig, ax = plt.subplots(numplots,sharex=True, sharey=True)
         patientplots = numplotslist
         # load pt data
         csvimport = file_sel()
@@ -364,7 +303,6 @@ if __name__ == '__main__':
                 df = df.with_columns(
                     (pl.col('Device Timestamp').str.strptime(pl.Datetime, fmt='%d-%m-%Y %H:%M')).alias('timestamp'))
 
-            #df = pl.read_csv(csvimport, has_header=True, try_parse_dates=True, skip_rows=1)
             df = df.with_columns(
                 (pl.col('Scan Glucose mg/dL').cast(pl.Int64).fill_null(0) + pl.col('Historic Glucose mg/dL')).alias('glu'))
             df = df.lazy().drop_nulls('glu').collect()
@@ -377,6 +315,19 @@ if __name__ == '__main__':
         df = df.with_columns(
             pl.col('duration').apply(lambda x: round_to_multiple(x, 5)).alias('deltamins')
         )
+
+        if daterange:
+            dstart = df.head(1).select('timestamp')
+            dend = df.tail(1).select('timestamp')
+            print('Date Range of uploaded file is from ' + str(dstart[0, 0]) + ' to ' + str(dend[0, 0]))
+            analysis_start = input('Enter analysis start date/time (following format YYYY-MM-DD HH:mm): ')
+            analysis_end = input('Enter analysis end date/time (same format): ')
+            start_datetime = datetime.strptime(analysis_start, '%Y-%m-%d %H:%M')
+            end_datetime = datetime.strptime(analysis_end, '%Y-%m-%d %H:%M')
+            df = df.filter(
+                pl.col("timestamp").is_between(start_datetime, end_datetime)
+            )
+
         df = df.select(['deltamins', 'glu'])
         # remove duplicates
         df = df.unique(subset='deltamins', keep='first')
@@ -421,9 +372,8 @@ if __name__ == '__main__':
             if index == 0:
                 subpt.set_title("file: " + basename(csvimport), size=8)
             subpt.set_xlabel("n")
-            subpt.set_ylabel("n + " + str(delays_list[index]) + " mins")
             subpt.grid(color='green', linestyle='--', linewidth=0.25)
-            subpt.scatter(x[plot], y[plot], c=z[plot], s=50, cmap=cm.jet, alpha=.3, marker='.')
+            exp_plot = subpt.scatter(x[plot], y[plot], c=z[plot], s=50, cmap=cm.jet, alpha=.3, marker='.')
             subpt.axline((0, 0), slope=1, color='black', linestyle=':', linewidth=.5, alpha=.7)
+            plt.colorbar(exp_plot, label='probability density function')
     plt.show()
-
