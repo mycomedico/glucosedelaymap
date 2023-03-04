@@ -62,11 +62,21 @@ if __name__ == '__main__':
     else:
         daterange = False
 
+    axes_scale = input('Auto-detect axes scale? (y/n): ')
+    if axes_scale == ('n' or 'no' or 'NO' or 'No'):
+        x_origin = int(input('Enter x-axis origin (e.g. 0) : '))
+        xdomain = int(input('Enter x-axis domain (e.g. 300) : '))
+        y_origin = int(input('Enter y-axis origin (e.g. 0) : '))
+        yrange = int(input('Enter y-axis range (e.g. 300) : '))
+        axes_scale = True
+    else:
+        axes_scale = False
+
     #total number of plots
     numplots = a * b
     pattern = 'Index.*'
     patternl = '.*[AP]M.*'
-    numplotslist = list(range(a * b))
+    numplotslist = list(range(numplots))
     x = numplotslist.copy()
     y = numplotslist.copy()
     z = numplotslist.copy()
@@ -75,6 +85,8 @@ if __name__ == '__main__':
     # a = number of delay points, b= 1 for data alone, 2 w control
     fig, ax = plt.subplots(a,b,sharex=True, sharey=True)
     fig.suptitle('Color Density Poincaré Plot')
+
+
     if control:
         #every other plot is control
         controlplots = numplotslist[0::2]
@@ -103,7 +115,6 @@ if __name__ == '__main__':
                 subp = ax[0]
             else:
                 subp = ax[index, 0]
-
             delay = int(delays_list[index])
             dd = df.select('deltamins') + delay
             djoiny = df.join(dd, on='deltamins', how='inner')
@@ -254,10 +265,16 @@ if __name__ == '__main__':
             if index == 0:
                 subpt.set_title("file: " + basename(csvimport),size=8)
             subpt.set_xlabel("n")
+            if axes_scale:
+                subpt.set_xlim(x_origin, xdomain)
+                subpt.set_ylim(y_origin, yrange)
+            #subpt.set_xlim(0,200)
+            #subpt.set_ylim(0,200)
             subpt.grid(color='green', linestyle='--', linewidth=0.25)
             exp_plot = subpt.scatter(x[plot], y[plot], c=z[plot], s=50, cmap=cm.jet, alpha=.3, marker='.')
             subpt.axline((0, 0), slope=1, color='black', linestyle=':', linewidth=.5, alpha=.7)
             plt.colorbar(exp_plot, label='probability density function')
+
     else:
     #patient data plots
         patientplots = numplotslist
@@ -377,10 +394,11 @@ if __name__ == '__main__':
                 subpt.set_title("file: " + basename(csvimport), size=8)
             subpt.set_xlabel("n")
             subpt.set_ylabel("n + " + str(delays_list[index]) + " mins")
+            if axes_scale:
+                subpt.set_xlim(x_origin, xdomain)
+                subpt.set_ylim(y_origin, yrange)
             subpt.grid(color='green', linestyle='--', linewidth=0.25)
             exp_plot = subpt.scatter(x[plot], y[plot], c=z[plot], s=50, cmap=cm.jet, alpha=.3, marker='.')
             subpt.axline((0, 0), slope=1, color='black', linestyle=':', linewidth=.5, alpha=.7)
             plt.colorbar(exp_plot, label='probability density function')
-            #subpt.set_xlim(0, 300)
-            #subpt.set_ylim(0, 300)
     plt.show()
