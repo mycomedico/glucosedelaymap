@@ -168,7 +168,9 @@ if __name__ == '__main__':
             df = df.with_columns(
                 (pl.col('Timestamp (YYYY-MM-DDThh:mm:ss)') - date0).dt.minutes().alias('duration')
             )
-
+            df = df.with_columns(
+                (pl.col('Timestamp (YYYY-MM-DDThh:mm:ss)')).alias('timestamp')
+            )
         else:
             #this is a libre file so....
             # we need a regex to detect whether or not 'PM or AM' is in the date column
@@ -288,7 +290,9 @@ if __name__ == '__main__':
             df = df.with_columns(
                 (pl.col('Timestamp (YYYY-MM-DDThh:mm:ss)') - date0).dt.minutes().alias('duration')
             )
-
+            df = df.with_columns(
+                (pl.col('Timestamp (YYYY-MM-DDThh:mm:ss)')).alias('timestamp')
+            )
         else:
             # this is a libre file so....
             df = pl.read_csv(csvimport, has_header=True, try_parse_dates=True, skip_rows=1)
@@ -372,8 +376,11 @@ if __name__ == '__main__':
             if index == 0:
                 subpt.set_title("file: " + basename(csvimport), size=8)
             subpt.set_xlabel("n")
+            subpt.set_ylabel("n + " + str(delays_list[index]) + " mins")
             subpt.grid(color='green', linestyle='--', linewidth=0.25)
             exp_plot = subpt.scatter(x[plot], y[plot], c=z[plot], s=50, cmap=cm.jet, alpha=.3, marker='.')
             subpt.axline((0, 0), slope=1, color='black', linestyle=':', linewidth=.5, alpha=.7)
             plt.colorbar(exp_plot, label='probability density function')
+            #subpt.set_xlim(0, 300)
+            #subpt.set_ylim(0, 300)
     plt.show()
